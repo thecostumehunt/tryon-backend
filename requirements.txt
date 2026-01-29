@@ -8,3 +8,4 @@ requests
 pillow
 fal-client
 httpx
+python-multipart
