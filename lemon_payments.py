@@ -15,12 +15,31 @@ VARIANTS = {
     "100": os.getenv("LEMON_VARIANT_100"),
 }
 
+
 @router.post("/create-link")
 def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
 
-    if pack not in VARIANTS or not VARIANTS[pack]:
-        raise HTTPException(status_code=400, detail="Invalid pack")
+    # ---------------------------
+    # 🔒 ENV SAFETY CHECKS
+    # ---------------------------
+    if not LEMON_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="LEMON_API_KEY missing in backend environment variables"
+        )
 
+    if not LEMON_STORE_ID:
+        raise HTTPException(
+            status_code=500,
+            detail="LEMON_STORE_ID missing in backend environment variables"
+        )
+
+    if pack not in VARIANTS or not VARIANTS[pack]:
+        raise HTTPException(status_code=400, detail="Invalid credit pack")
+
+    # ---------------------------
+    # LEMON CHECKOUT CREATION
+    # ---------------------------
     url = "https://api.lemonsqueezy.com/v1/checkouts"
 
     payload = {
@@ -57,7 +76,7 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
         "Content-Type": "application/vnd.api+json"
     }
 
-    r = requests.post(url, json=payload, headers=headers)
+    r = requests.post(url, json=payload, headers=headers, timeout=20)
 
     if r.status_code not in [200, 201]:
         raise HTTPException(status_code=400, detail=r.text)
