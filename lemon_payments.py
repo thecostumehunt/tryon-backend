@@ -54,7 +54,7 @@ def create_lemon_checkout(
     cancel_url = f"{FRONTEND_URL}/?device_token={device.token}"
 
     # ---------------------------
-    # LEMON PAYLOAD
+    # LEMON PAYLOAD (CRITICAL FIX)
     # ---------------------------
     payload = {
         "data": {
@@ -66,11 +66,13 @@ def create_lemon_checkout(
                         "credits": pack,
                     }
                 },
-                # MUST be array
-                "checkout_options": [{
-                    "redirect_url": success_url,
-                    "cancel_url": cancel_url,
-                }]
+                # 🚨 MUST BE ARRAY
+                "checkout_options": [
+                    {
+                        "redirect_url": success_url,
+                        "cancel_url": cancel_url,
+                    }
+                ]
             },
             "relationships": {
                 "store": {
@@ -106,7 +108,10 @@ def create_lemon_checkout(
     )
 
     if r.status_code not in (200, 201):
-        raise HTTPException(400, r.text)
+        raise HTTPException(
+            status_code=400,
+            detail=r.text
+        )
 
     checkout_url = r.json()["data"]["attributes"]["url"]
 
