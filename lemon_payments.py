@@ -1,8 +1,9 @@
 import os
 import requests
 from fastapi import APIRouter, Depends, HTTPException
-from auth_device import get_device, create_device_token
+from auth_device import get_device
 from models import Device
+import hashlib
 
 router = APIRouter(prefix="/lemon", tags=["lemon"])
 
@@ -14,6 +15,10 @@ VARIANTS = {
     "15": os.getenv("LEMON_VARIANT_15"),
     "100": os.getenv("LEMON_VARIANT_100"),
 }
+
+def hash_text(text: str):
+    """Helper to match auth_device hash function"""
+    return hashlib.sha256(text.encode()).hexdigest()
 
 @router.post("/create-link")
 def create_lemon_checkout(
@@ -29,8 +34,9 @@ def create_lemon_checkout(
     if pack not in VARIANTS or not VARIANTS[pack]:
         raise HTTPException(400, "Invalid credit pack")
 
-    # 🔑 Pass FULL device token (not just ID) for webhook matching
-    device_token = create_device_token(str(device.id))
+    # ✅ Get fingerprint from request headers (same as frontend sends)
+    # Since get_device already matched by fingerprint, use device's stored fingerprint
+    fingerprint_hash = device.fingerprinthash
     
     payload = {
         "data": {
@@ -38,8 +44,8 @@ def create_lemon_checkout(
             "attributes": {
                 "checkout_data": {
                     "custom": {
-                        # ✅ Webhook uses FULL TOKEN for exact device match
-                        "device_token": device_token,  
+                        # ✅ Use FINGERPRINT HASH - webhook will match by this
+                        "fingerprint": fingerprint_hash,
                         "credits": pack,
                     }
                 }
