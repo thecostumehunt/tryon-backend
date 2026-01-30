@@ -22,6 +22,7 @@ JWT_ALGORITHM = "HS256"
 def hash_text(text: str):
     return hashlib.sha256(text.encode()).hexdigest()
 
+
 def create_device_token(device_id: str):
     payload = {
         "device_id": device_id,
@@ -29,52 +30,75 @@ def create_device_token(device_id: str):
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+
 def verify_device_token(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload["device_id"]
-    except Exception:
+    except:
         return None
+
 
 # -------------------
 # Core dependency
 # -------------------
 
-def get_device(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+def get_device(request: Request, db: Session = Depends(get_db)):
+    # -------------------
+    # 1. TOKEN-BASED (PRIMARY)
+    # -------------------
     auth = request.headers.get("Authorization")
-
-    # -------------------
-    # EXISTING DEVICE
-    # -------------------
     if auth and auth.startswith("Bearer "):
-        token = auth.replace("Bearer ", "").strip()
+        token = auth.replace("Bearer ", "")
         device_id = verify_device_token(token)
-
         if device_id:
             device = db.query(Device).filter(Device.id == device_id).first()
             if device:
                 device.last_seen = datetime.utcnow()
                 db.commit()
-
-                # 🔑 CRITICAL FIX (attach token)
-                device.token = token
-
                 return device
 
     # -------------------
-    # NEW DEVICE
+    # 2. FINGERPRINT-BASED (SECONDARY)
     # -------------------
-    ip = request.client.host if request.client else "unknown"
+    fingerprint = request.headers.get("X-Fingerprint")
+    fp_hash = hash_text(fingerprint) if fingerprint else None
+
+    if fp_hash:
+        device = db.query(Device).filter(
+            Device.fingerprint_hash == fp_hash
+        ).first()
+        if device:
+            device.last_seen = datetime.utcnow()
+            db.commit()
+            return device
+
+    # -------------------
+    # 3. IP FALLBACK (ANTI-ABUSE)
+    # -------------------
+    ip = request.client.host
     ip_hash = hash_text(ip)
 
+    recent = db.query(Device).filter(
+        Device.ip_hash == ip_hash
+    ).order_by(Device.created_at.desc()).first()
+
+    if recent:
+        recent.last_seen = datetime.utcnow()
+        db.commit()
+        return recent
+
+    # -------------------
+    # 4. CREATE NEW DEVICE
+    # -------------------
     new_device = Device(
         id=uuid.uuid4(),
         ip_hash=ip_hash,
+        fingerprint_hash=fp_hash,
         created_at=datetime.utcnow(),
-        last_seen=datetime.utcnow()
+        last_seen=datetime.utcnow(),
+        credits=0,
+        free_used=False
     )
 
     db.add(new_device)
@@ -82,11 +106,6 @@ def get_device(
     db.refresh(new_device)
 
     token = create_device_token(str(new_device.id))
-
-    # 🔑 CRITICAL FIX (attach token)
-    new_device.token = token
-
-    # expose token for /device/init response
     request.state.new_device_token = token
 
     return new_device
