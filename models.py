@@ -61,4 +61,3 @@ class UsageLog(Base):
     status = Column(Text)
 
     created_at = Column(TIMESTAMP)
-
