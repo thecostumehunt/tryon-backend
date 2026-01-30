@@ -22,14 +22,12 @@ JWT_ALGORITHM = "HS256"
 def hash_text(text: str):
     return hashlib.sha256(text.encode()).hexdigest()
 
-
 def create_device_token(device_id: str):
     payload = {
         "device_id": device_id,
         "exp": datetime.utcnow() + timedelta(days=365)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
 
 def verify_device_token(token: str):
     try:
@@ -38,15 +36,12 @@ def verify_device_token(token: str):
     except:
         return None
 
-
 # -------------------
-# Core dependency - FIXED PRIORITY ORDER
+# Core dependency - CORRECT COLUMN NAMES
 # -------------------
 
 def get_device(request: Request, db: Session = Depends(get_db)):
-    # -------------------
     # 1. TOKEN-BASED (PRIMARY)
-    # -------------------
     auth = request.headers.get("Authorization")
     if auth and auth.startswith("Bearer "):
         token = auth.replace("Bearer ", "")
@@ -58,29 +53,25 @@ def get_device(request: Request, db: Session = Depends(get_db)):
                 db.commit()
                 return device
 
-    # -------------------
-    # 2. FINGERPRINT-BASED (CRITICAL FIX)
-    # -------------------
+    # 2. FINGERPRINT-BASED (CRITICAL)
     fingerprint = request.headers.get("X-Fingerprint")
     fp_hash = hash_text(fingerprint) if fingerprint else None
 
     if fp_hash:
         device = db.query(Device).filter(
-            Device.fingerprinthash == fp_hash  # ✅ FIXED: matches your DB column
+            Device.fingerprint_hash == fp_hash  # ✅ FIXED
         ).first()
         if device:
             device.last_seen = datetime.utcnow()
             db.commit()
             return device
 
-    # -------------------
-    # 3. IP FALLBACK (ANTI-ABUSE)
-    # -------------------
+    # 3. IP FALLBACK
     ip = request.client.host
     ip_hash = hash_text(ip)
 
     recent = db.query(Device).filter(
-        Device.iphash == ip_hash  # ✅ FIXED: matches your DB column
+        Device.ip_hash == ip_hash  # ✅ FIXED
     ).order_by(Device.created_at.desc()).first()
 
     if recent:
@@ -88,13 +79,11 @@ def get_device(request: Request, db: Session = Depends(get_db)):
         db.commit()
         return recent
 
-    # -------------------
     # 4. CREATE NEW DEVICE
-    # -------------------
     new_device = Device(
         id=uuid.uuid4(),
-        iphash=ip_hash,           # ✅ FIXED: matches your DB column
-        fingerprinthash=fp_hash,  # ✅ FIXED: matches your DB column
+        ip_hash=ip_hash,           # ✅ FIXED
+        fingerprint_hash=fp_hash,  # ✅ FIXED
         created_at=datetime.utcnow(),
         last_seen=datetime.utcnow(),
         credits=0,
