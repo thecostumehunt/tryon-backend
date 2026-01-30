@@ -6,9 +6,6 @@ from models import Device
 
 router = APIRouter(prefix="/lemon", tags=["lemon"])
 
-# ----------------------------------
-# ENV VARIABLES (MATCH RENDER)
-# ----------------------------------
 LEMON_API_KEY = os.getenv("LEMON_API_KEY")
 LEMON_STORE_ID = os.getenv("LEMON_STORE_ID")
 
@@ -23,37 +20,17 @@ STREAMLIT_APP_URL = os.getenv(
     "https://your-streamlit-app-url"
 )
 
-# ----------------------------------
-# CREATE CHECKOUT
-# ----------------------------------
 @router.post("/create-link")
 def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
 
-    # ---------------------------
-    # 🔒 ENV SAFETY CHECKS
-    # ---------------------------
     if not LEMON_API_KEY:
-        raise HTTPException(
-            status_code=500,
-            detail="LEMON_API_KEY missing in backend environment variables"
-        )
+        raise HTTPException(500, "LEMON_API_KEY missing")
 
     if not LEMON_STORE_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="LEMON_STORE_ID missing in backend environment variables"
-        )
+        raise HTTPException(500, "LEMON_STORE_ID missing")
 
     if pack not in VARIANTS or not VARIANTS[pack]:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid credit pack"
-        )
-
-    # ---------------------------
-    # LEMON CHECKOUT CREATION
-    # ---------------------------
-    url = "https://api.lemonsqueezy.com/v1/checkouts"
+        raise HTTPException(400, "Invalid credit pack")
 
     payload = {
         "data": {
@@ -65,7 +42,7 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
                         "credits": pack
                     }
                 },
-                # ⚠️ MUST be an array
+                # 🔑 MUST BE ARRAY
                 "checkout_options": [
                     {
                         "redirect_url": STREAMLIT_APP_URL,
@@ -96,27 +73,15 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
         "Content-Type": "application/vnd.api+json"
     }
 
-    try:
-        r = requests.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=20
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"LemonSqueezy connection error: {str(e)}"
-        )
+    r = requests.post(
+        "https://api.lemonsqueezy.com/v1/checkouts",
+        json=payload,
+        headers=headers,
+        timeout=20
+    )
 
     if r.status_code not in (200, 201):
-        raise HTTPException(
-            status_code=400,
-            detail=r.text
-        )
+        raise HTTPException(400, r.text)
 
-    data = r.json()
-    checkout_url = data["data"]["attributes"]["url"]
-
-    # 👇 Frontend expects this exact key
+    checkout_url = r.json()["data"]["attributes"]["url"]
     return {"checkout_url": checkout_url}
