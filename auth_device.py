@@ -15,10 +15,6 @@ load_dotenv()
 JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 
-# -------------------
-# Helpers
-# -------------------
-
 def hash_text(text: str):
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -36,12 +32,8 @@ def verify_device_token(token: str):
     except:
         return None
 
-# -------------------
-# Core dependency - CORRECT COLUMN NAMES
-# -------------------
-
 def get_device(request: Request, db: Session = Depends(get_db)):
-    # 1. TOKEN-BASED (PRIMARY)
+    # 1. TOKEN (highest priority)
     auth = request.headers.get("Authorization")
     if auth and auth.startswith("Bearer "):
         token = auth.replace("Bearer ", "")
@@ -53,13 +45,13 @@ def get_device(request: Request, db: Session = Depends(get_db)):
                 db.commit()
                 return device
 
-    # 2. FINGERPRINT-BASED (CRITICAL)
+    # 2. FINGERPRINT (CRITICAL - matches your models.py)
     fingerprint = request.headers.get("X-Fingerprint")
     fp_hash = hash_text(fingerprint) if fingerprint else None
 
     if fp_hash:
         device = db.query(Device).filter(
-            Device.fingerprint_hash == fp_hash  # ✅ FIXED
+            Device.fingerprinthash == fp_hash  # ← EXACT models.py name
         ).first()
         if device:
             device.last_seen = datetime.utcnow()
@@ -71,7 +63,7 @@ def get_device(request: Request, db: Session = Depends(get_db)):
     ip_hash = hash_text(ip)
 
     recent = db.query(Device).filter(
-        Device.ip_hash == ip_hash  # ✅ FIXED
+        Device.iphash == ip_hash  # ← EXACT models.py name
     ).order_by(Device.created_at.desc()).first()
 
     if recent:
@@ -79,11 +71,11 @@ def get_device(request: Request, db: Session = Depends(get_db)):
         db.commit()
         return recent
 
-    # 4. CREATE NEW DEVICE
+    # 4. NEW DEVICE
     new_device = Device(
         id=uuid.uuid4(),
-        ip_hash=ip_hash,           # ✅ FIXED
-        fingerprint_hash=fp_hash,  # ✅ FIXED
+        iphash=ip_hash,           # ← EXACT models.py name
+        fingerprinthash=fp_hash,  # ← EXACT models.py name
         created_at=datetime.utcnow(),
         last_seen=datetime.utcnow(),
         credits=0,
