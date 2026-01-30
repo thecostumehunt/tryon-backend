@@ -40,7 +40,7 @@ def verify_device_token(token: str):
 
 
 # -------------------
-# Core dependency
+# Core dependency - FIXED PRIORITY ORDER
 # -------------------
 
 def get_device(request: Request, db: Session = Depends(get_db)):
@@ -59,14 +59,14 @@ def get_device(request: Request, db: Session = Depends(get_db)):
                 return device
 
     # -------------------
-    # 2. FINGERPRINT-BASED (SECONDARY)
+    # 2. FINGERPRINT-BASED (CRITICAL FIX)
     # -------------------
     fingerprint = request.headers.get("X-Fingerprint")
     fp_hash = hash_text(fingerprint) if fingerprint else None
 
     if fp_hash:
         device = db.query(Device).filter(
-            Device.fingerprint_hash == fp_hash
+            Device.fingerprinthash == fp_hash  # ✅ FIXED: matches your DB column
         ).first()
         if device:
             device.last_seen = datetime.utcnow()
@@ -80,7 +80,7 @@ def get_device(request: Request, db: Session = Depends(get_db)):
     ip_hash = hash_text(ip)
 
     recent = db.query(Device).filter(
-        Device.ip_hash == ip_hash
+        Device.iphash == ip_hash  # ✅ FIXED: matches your DB column
     ).order_by(Device.created_at.desc()).first()
 
     if recent:
@@ -93,8 +93,8 @@ def get_device(request: Request, db: Session = Depends(get_db)):
     # -------------------
     new_device = Device(
         id=uuid.uuid4(),
-        ip_hash=ip_hash,
-        fingerprint_hash=fp_hash,
+        iphash=ip_hash,           # ✅ FIXED: matches your DB column
+        fingerprinthash=fp_hash,  # ✅ FIXED: matches your DB column
         created_at=datetime.utcnow(),
         last_seen=datetime.utcnow(),
         credits=0,
