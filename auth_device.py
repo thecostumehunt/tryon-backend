@@ -51,7 +51,7 @@ def get_device(request: Request, db: Session = Depends(get_db)):
 
     if fp_hash:
         device = db.query(Device).filter(
-            Device.fingerprinthash == fp_hash  # ← EXACT models.py name
+            Device.fingerprint_hash == fp_hash  # ← EXACT models.py name
         ).first()
         if device:
             device.last_seen = datetime.utcnow()
@@ -63,7 +63,7 @@ def get_device(request: Request, db: Session = Depends(get_db)):
     ip_hash = hash_text(ip)
 
     recent = db.query(Device).filter(
-        Device.iphash == ip_hash  # ← EXACT models.py name
+        Device.ip_hash == ip_hash  # ← EXACT models.py name
     ).order_by(Device.created_at.desc()).first()
 
     if recent:
@@ -74,8 +74,8 @@ def get_device(request: Request, db: Session = Depends(get_db)):
     # 4. NEW DEVICE
     new_device = Device(
         id=uuid.uuid4(),
-        iphash=ip_hash,           # ← EXACT models.py name
-        fingerprinthash=fp_hash,  # ← EXACT models.py name
+        ip_hash=ip_hash,           # ← EXACT models.py name
+        fingerprint_hash=fp_hash,  # ← EXACT models.py name
         created_at=datetime.utcnow(),
         last_seen=datetime.utcnow(),
         credits=0,
