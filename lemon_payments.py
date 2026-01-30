@@ -6,6 +6,9 @@ from models import Device
 
 router = APIRouter(prefix="/lemon", tags=["lemon"])
 
+# ----------------------------------
+# ENV VARIABLES (MATCH RENDER)
+# ----------------------------------
 LEMON_API_KEY = os.getenv("LEMON_API_KEY")
 LEMON_STORE_ID = os.getenv("LEMON_STORE_ID")
 
@@ -15,7 +18,14 @@ VARIANTS = {
     "100": os.getenv("LEMON_VARIANT_100"),
 }
 
+STREAMLIT_APP_URL = os.getenv(
+    "STREAMLIT_APP_URL",
+    "https://your-streamlit-app-url"
+)
 
+# ----------------------------------
+# CREATE CHECKOUT
+# ----------------------------------
 @router.post("/create-link")
 def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
 
@@ -35,7 +45,10 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
         )
 
     if pack not in VARIANTS or not VARIANTS[pack]:
-        raise HTTPException(status_code=400, detail="Invalid credit pack")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid credit pack"
+        )
 
     # ---------------------------
     # LEMON CHECKOUT CREATION
@@ -51,6 +64,10 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
                         "device_id": str(device.id),
                         "credits": pack
                     }
+                },
+                "checkout_options": {
+                    "redirect_url": STREAMLIT_APP_URL,
+                    "cancel_url": STREAMLIT_APP_URL
                 }
             },
             "relationships": {
@@ -76,12 +93,27 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
         "Content-Type": "application/vnd.api+json"
     }
 
-    r = requests.post(url, json=payload, headers=headers, timeout=20)
+    try:
+        r = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=20
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"LemonSqueezy connection error: {str(e)}"
+        )
 
-    if r.status_code not in [200, 201]:
-        raise HTTPException(status_code=400, detail=r.text)
+    if r.status_code not in (200, 201):
+        raise HTTPException(
+            status_code=400,
+            detail=r.text
+        )
 
     data = r.json()
     checkout_url = data["data"]["attributes"]["url"]
 
-    return {"payment_url": checkout_url}
+    # 👇 CRITICAL FIX: frontend expects this key
+    return {"checkout_url": checkout_url}
