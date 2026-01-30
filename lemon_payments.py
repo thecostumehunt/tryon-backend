@@ -65,10 +65,13 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
                         "credits": pack
                     }
                 },
-                "checkout_options": {
-                    "redirect_url": STREAMLIT_APP_URL,
-                    "cancel_url": STREAMLIT_APP_URL
-                }
+                # ⚠️ MUST be an array
+                "checkout_options": [
+                    {
+                        "redirect_url": STREAMLIT_APP_URL,
+                        "cancel_url": STREAMLIT_APP_URL
+                    }
+                ]
             },
             "relationships": {
                 "store": {
@@ -115,5 +118,5 @@ def create_lemon_checkout(pack: str, device: Device = Depends(get_device)):
     data = r.json()
     checkout_url = data["data"]["attributes"]["url"]
 
-    # 👇 CRITICAL FIX: frontend expects this key
+    # 👇 Frontend expects this exact key
     return {"checkout_url": checkout_url}
