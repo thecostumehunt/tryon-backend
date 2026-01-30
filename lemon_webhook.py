@@ -6,7 +6,6 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Device, Payment
-from auth_device import verify_device_token  # Add this import
 
 router = APIRouter(prefix="/lemonsqueezy", tags=["lemonsqueezy"])
 
@@ -30,6 +29,10 @@ def verify_signature(payload: bytes, signature: str):
     if not hmac.compare_digest(expected, signature):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+def hash_text(text: str):
+    """Match auth_device hash function exactly"""
+    return hashlib.sha256(text.encode()).hexdigest()
+
 @router.post("/webhook")
 async def lemon_webhook(request: Request, db: Session = Depends(get_db)):
     # Verify signature first
@@ -47,21 +50,33 @@ async def lemon_webhook(request: Request, db: Session = Depends(get_db)):
     if event != "order_created":
         return {"status": "ignored"}
     
-    # ✅ NEW: Use device_token instead of deviceid
+    # ✅ FIXED: Use FINGERPRINT instead of device_token
     custom = payload.get("meta", {}).get("custom_data", {})
-    device_token = custom.get("device_token")
+    fingerprint = custom.get("fingerprint")
     credits = int(custom.get("credits", 0))
     
-    if not device_token:
-        return {"status": "missing device_token"}
+    if not fingerprint:
+        return {"status": "missing fingerprint"}
     
     if credits == 0:
         return {"status": "invalid credits"}
     
-    # Extract device ID from token
-    device_id = verify_device_token(device_token)
-    if not device_id:
-        return {"status": "invalid device_token"}
+    # ✅ Find device by fingerprint hash (SAME as auth_device.py)
+    fp_hash = hash_text(fingerprint)
+    device = db.query(Device).filter(Device.fingerprinthash == fp_hash).first()
+    
+    if not device:
+        # Create new device if no fingerprint match (rare)
+        device = Device(
+            id=uuid.uuid4(),
+            fingerprinthash=fp_hash,
+            credits=0,
+            created_at=datetime.utcnow(),
+            last_seen=datetime.utcnow()
+        )
+        db.add(device)
+        db.commit()
+        db.refresh(device)
     
     # Check for duplicate payment
     order_id = payload["data"]["id"]
@@ -71,23 +86,9 @@ async def lemon_webhook(request: Request, db: Session = Depends(get_db)):
     ).first():
         return {"status": "duplicate"}
     
-    # Find or create device
-    device = db.query(Device).filter(Device.id == device_id).first()
-    if not device:
-        device = Device(
-            id=device_id,
-            credits=0,
-            created_at=datetime.utcnow(),
-            last_seen=datetime.utcnow()
-        )
-        db.add(device)
-        db.commit()
-        db.refresh(device)
-    
     # Add credits
     old_credits = device.credits
     device.credits += credits
-    db.add(device)
     
     # Log payment
     payment = Payment(
@@ -104,6 +105,6 @@ async def lemon_webhook(request: Request, db: Session = Depends(get_db)):
     db.add(payment)
     db.commit()
     
-    print(f"LEMON PAYMENT CONFIRMED: {old_credits} → {device.credits}")
+    print(f"LEMON PAYMENT CONFIRMED: fingerprint={fp_hash[:8]} {old_credits} → {device.credits}")
     
     return {"status": "success"}
