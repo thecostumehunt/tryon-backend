@@ -33,18 +33,24 @@ def verify_device_token(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload["device_id"]
-    except:
+    except Exception:
         return None
 
 # -------------------
 # Core dependency
 # -------------------
 
-def get_device(request: Request, db: Session = Depends(get_db)):
-    token = request.headers.get("Authorization")
+def get_device(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    auth = request.headers.get("Authorization")
 
-    if token and token.startswith("Bearer "):
-        token = token.replace("Bearer ", "")
+    # -------------------
+    # EXISTING DEVICE
+    # -------------------
+    if auth and auth.startswith("Bearer "):
+        token = auth.replace("Bearer ", "").strip()
         device_id = verify_device_token(token)
 
         if device_id:
@@ -52,10 +58,16 @@ def get_device(request: Request, db: Session = Depends(get_db)):
             if device:
                 device.last_seen = datetime.utcnow()
                 db.commit()
+
+                # 🔑 CRITICAL FIX (attach token)
+                device.token = token
+
                 return device
 
-    # If no valid token → create new device
-    ip = request.client.host
+    # -------------------
+    # NEW DEVICE
+    # -------------------
+    ip = request.client.host if request.client else "unknown"
     ip_hash = hash_text(ip)
 
     new_device = Device(
@@ -70,6 +82,11 @@ def get_device(request: Request, db: Session = Depends(get_db)):
     db.refresh(new_device)
 
     token = create_device_token(str(new_device.id))
+
+    # 🔑 CRITICAL FIX (attach token)
+    new_device.token = token
+
+    # expose token for /device/init response
     request.state.new_device_token = token
 
     return new_device
