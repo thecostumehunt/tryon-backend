@@ -1,7 +1,7 @@
 import os
 import requests
 from fastapi import APIRouter, Depends, HTTPException
-from auth_device import get_device
+from auth_device import get_device, create_device_token
 from models import Device
 
 router = APIRouter(prefix="/lemon", tags=["lemon"])
@@ -14,7 +14,6 @@ VARIANTS = {
     "15": os.getenv("LEMON_VARIANT_15"),
     "100": os.getenv("LEMON_VARIANT_100"),
 }
-
 
 @router.post("/create-link")
 def create_lemon_checkout(
@@ -30,15 +29,17 @@ def create_lemon_checkout(
     if pack not in VARIANTS or not VARIANTS[pack]:
         raise HTTPException(400, "Invalid credit pack")
 
-    # 🔑 device.token not required here anymore
+    # 🔑 Pass FULL device token (not just ID) for webhook matching
+    device_token = create_device_token(str(device.id))
+    
     payload = {
         "data": {
             "type": "checkouts",
             "attributes": {
                 "checkout_data": {
                     "custom": {
-                        # used by webhook ONLY
-                        "device_id": str(device.id),
+                        # ✅ Webhook uses FULL TOKEN for exact device match
+                        "device_token": device_token,  
                         "credits": pack,
                     }
                 }
