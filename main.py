@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from auth_device import get_device
+from models import Device
 from credits import router as credits_router
 from tryon import router as tryon_router
 from lemon_payments import router as lemon_router
@@ -37,7 +38,6 @@ app.include_router(lemon_router)
 app.include_router(lemon_webhook_router)
 
 
-
 # ----------------------------------
 # ROOT
 # ----------------------------------
@@ -47,16 +47,17 @@ def root():
 
 
 # ----------------------------------
-# DEVICE INIT
+# DEVICE INIT - FIXED
 # ----------------------------------
 @app.get("/device/init")
-def init_device(request: Request, device = Depends(get_device)):
+def init_device(request: Request, device: Device = Depends(get_device)):
     response = {
         "device_id": str(device.id),
         "credits": device.credits,
         "free_used": device.free_used
     }
 
+    # Return token ONLY for new devices
     if hasattr(request.state, "new_device_token"):
         response["device_token"] = request.state.new_device_token
 
