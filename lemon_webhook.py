@@ -15,7 +15,6 @@ WEBHOOK_SECRET = os.getenv("LEMON_WEBHOOK_SECRET")
 def verify_signature(payload: bytes, signature: str):
     """
     LemonSqueezy sends X-Signature as a SHA256 hex digest.
-    Sometimes prefixed with 'sha256='.
     """
     if not WEBHOOK_SECRET:
         raise HTTPException(500, "LEMON_WEBHOOK_SECRET missing")
@@ -26,7 +25,6 @@ def verify_signature(payload: bytes, signature: str):
         hashlib.sha256
     ).hexdigest()
 
-    # Normalize signature
     signature = signature.replace("sha256=", "").strip()
 
     if not hmac.compare_digest(expected, signature):
@@ -39,30 +37,31 @@ async def lemon_webhook(request: Request, db: Session = Depends(get_db)):
     signature = request.headers.get("X-Signature")
 
     if not signature:
-        raise HTTPException(status_code=400, detail="Missing signature")
+        raise HTTPException(400, "Missing signature")
 
     verify_signature(raw_body, signature)
 
     payload = await request.json()
     event = payload.get("meta", {}).get("event_name")
 
-    # We only care about completed orders
     if event != "order_created":
         return {"status": "ignored"}
 
-    attributes = payload["data"]["attributes"]
-
-    # ✅ CORRECT LOCATION OF CUSTOM DATA
-    custom = attributes.get("checkout_data", {}).get("custom", {})
+    # ✅ CORRECT PLACE (from your real payload)
+    custom = payload.get("meta", {}).get("custom_data", {})
 
     device_id = custom.get("device_id")
     credits = int(custom.get("credits", 0))
 
-    if not device_id or credits <= 0:
-        print("❌ Missing device_id or credits in webhook")
-        return {"status": "missing_custom_data"}
+    if not device_id:
+        return {"status": "missing_device_id"}
+
+    if credits <= 0:
+        return {"status": "invalid_credits"}
 
     order_id = payload["data"]["id"]
+    attributes = payload["data"]["attributes"]
+
     email = attributes.get("user_email")
     product_name = attributes.get("first_order_item", {}).get("product_name")
     amount = attributes.get("total")
@@ -71,22 +70,31 @@ async def lemon_webhook(request: Request, db: Session = Depends(get_db)):
     # ---------------------------
     # DUPLICATE PROTECTION
     # ---------------------------
-    exists = db.query(Payment).filter(
+    if db.query(Payment).filter(
         Payment.provider == "lemon",
         Payment.provider_payment_id == order_id
-    ).first()
-
-    if exists:
+    ).first():
         return {"status": "duplicate"}
 
     # ---------------------------
-    # CREDIT DEVICE
+    # DEVICE RECOVERY (CRITICAL)
     # ---------------------------
     device = db.query(Device).filter(Device.id == device_id).first()
-    if not device:
-        print("❌ Device not found:", device_id)
-        return {"status": "device_not_found"}
 
+    if not device:
+        device = Device(
+            id=device_id,
+            credits=0,
+            created_at=datetime.utcnow(),
+            last_seen=datetime.utcnow()
+        )
+        db.add(device)
+        db.commit()
+        db.refresh(device)
+
+    # ---------------------------
+    # CREDIT USER
+    # ---------------------------
     old_credits = device.credits
     device.credits += credits
 
